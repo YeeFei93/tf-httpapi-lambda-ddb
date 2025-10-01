@@ -19,13 +19,13 @@ resource "aws_lambda_function" "http_api_lambda" {
     }
   }
 
-  # depends_on = [ aws_cloudwatch_log_group.http_api ]
+ depends_on = [ aws_cloudwatch_log_group.http_api ]
 }
 
-# resource "aws_cloudwatch_log_group" "http_api" {
-#   name              = "/aws/lambda/${local.name_prefix}-topmovies-api"
-#   retention_in_days = 7
-# }
+resource "aws_cloudwatch_log_group" "http_api" {
+  name              = "/aws/lambda/${local.name_prefix}-topmovies-api"
+  retention_in_days = 7
+}
 
 resource "aws_iam_role" "lambda_exec" {
   name = "${local.name_prefix}-topmovies-api-executionrole"
@@ -86,4 +86,46 @@ POLICY
 resource "aws_iam_role_policy_attachment" "lambda_policy" {
   role       = aws_iam_role.lambda_exec.name
   policy_arn = aws_iam_policy.lambda_exec_role.arn
+}
+
+# CloudWatch Log Metric Filter
+resource "aws_cloudwatch_log_metric_filter" "info_count" {
+  name           = "info-count"
+  log_group_name = aws_cloudwatch_log_group.http_api.name
+  pattern        = "[INFO]"
+
+  metric_transformation {
+    name          = "info-count"
+    namespace     = "/moviedb-api/${local.name_prefix}"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+# SNS Topic for Alerts
+resource "aws_sns_topic" "alert_topic" {
+  name = "${local.name_prefix}-alert-topic"
+}
+
+# SNS Topic Subscription (replace with your actual email address)
+resource "aws_sns_topic_subscription" "email_alert" {
+  topic_arn = aws_sns_topic.alert_topic.arn
+  protocol  = "email"
+  endpoint  = "example@example.com"  # TODO: Replace with your actual email address
+}
+
+# CloudWatch Alarm
+resource "aws_cloudwatch_metric_alarm" "info_count_breach" {
+  alarm_name          = "${local.name_prefix}-info-count-breach"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "info-count"
+  namespace           = "/moviedb-api/${local.name_prefix}"
+  period              = "60"
+  statistic           = "Sum"
+  threshold           = "10"
+  alarm_description   = "This metric monitors info log count"
+  alarm_actions       = [aws_sns_topic.alert_topic.arn]
+
+  depends_on = [aws_cloudwatch_log_metric_filter.info_count]
 }
